@@ -45,27 +45,24 @@ document.addEventListener('DOMContentLoaded', () => {
   // Lower the water plane slightly below the wall edge
   const waterYOffset = poolYOffset - 0.05;
 
-  // Add water plane for the top face with enhanced ripple effects and reflection
-  const waterGeometry = new THREE.PlaneGeometry(poolSize, poolSize, 256, 256);
+  // Adjust the water plane to improve ripple dynamics and responsiveness
+  const waterGeometry = new THREE.PlaneGeometry(poolSize, poolSize, 128, 128); // Reduced segments for performance
   const waterMaterial = new THREE.ShaderMaterial({
     vertexShader: `
-      varying vec2 vUv;
-      varying vec3 vReflect;
       uniform float time;
       uniform vec2 mousePosition;
+      varying vec2 vUv;
 
       void main() {
         vUv = uv;
 
-        // Calculate reflection vector
-        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-        vec3 cameraToVertex = normalize(worldPosition.xyz - cameraPosition);
-        vReflect = reflect(cameraToVertex, vec3(0.0, 1.0, 0.0));
-
-        // Simulate ripples using sine waves
         vec3 newPosition = position;
+
+        // Calculate distance from mouse position
         float distance = length(uv - mousePosition);
-        float ripple = sin(distance * 60.0 - time * 10.0) * 0.3 / (distance * 50.0 + 1.0); // Increased intensity and frequency
+
+        // Simulate ripples using sine waves with faster propagation and smoother decay
+        float ripple = sin(distance * 50.0 - time * 10.0) * 0.15 / (distance * 10.0 + 1.0);
         newPosition.z += ripple;
 
         gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
@@ -73,24 +70,23 @@ document.addEventListener('DOMContentLoaded', () => {
     `,
     fragmentShader: `
       varying vec2 vUv;
-      varying vec3 vReflect;
       uniform vec3 waterColor;
       uniform sampler2D skyReflection;
       uniform float reflectionStrength;
 
       void main() {
         // Blend water color with sky reflection
-        vec4 reflection = texture2D(skyReflection, vReflect.xy * 0.5 + 0.5);
-        vec4 water = vec4(waterColor, 0.8); // Semi-transparent water
+        vec4 reflection = texture2D(skyReflection, vUv);
+        vec4 water = vec4(waterColor, 0.9); // Slightly more transparent water
         gl_FragColor = mix(water, reflection, reflectionStrength);
       }
     `,
     uniforms: {
-      waterColor: { value: new THREE.Color(0x87ceeb) },
-      skyReflection: { value: skyReflectionTexture },
-      time: { value: 0 },
+      waterColor: { value: new THREE.Color(0x87ceeb) }, // Light blue water color
+      skyReflection: { value: skyReflectionTexture }, // Sky reflection texture
+      time: { value: 0 }, // Time uniform for ripple animation
       mousePosition: { value: new THREE.Vector2(-1, -1) }, // Default off-screen
-      reflectionStrength: { value: 0.2 }, // Low reflection strength
+      reflectionStrength: { value: 0.3 }, // Increased reflection strength
     },
     transparent: true,
   });
@@ -254,19 +250,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const mouse = new THREE.Vector2(0, 0);
   const raycaster = new THREE.Raycaster();
 
+  // Optimize mouse event handling
+  let lastMouseMove = 0;
   canvas.addEventListener('mousemove', (event) => {
+    const now = performance.now();
+    if (now - lastMouseMove < 50) return; // Throttle to 20 FPS
+    lastMouseMove = now;
+
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-    // Update mouse position in water plane's UV coordinates
     raycaster.setFromCamera(mouse, camera);
     const intersects = raycaster.intersectObject(water);
     if (intersects.length > 0) {
-      const uv = intersects[0].uv; // Get UV coordinates of the intersection
+      const uv = intersects[0].uv;
       waterMaterial.uniforms.mousePosition.value.set(uv.x, uv.y);
       refractionUniforms.rippleCenter.value.set(uv.x, uv.y);
     } else {
-      waterMaterial.uniforms.mousePosition.value.set(-1, -1); // Off-screen
+      waterMaterial.uniforms.mousePosition.value.set(-1, -1);
       refractionUniforms.rippleCenter.value.set(-1, -1);
     }
   });
@@ -284,9 +285,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function animate() {
     const elapsedTime = clock.getElapsedTime();
 
-    // Update time uniform for ripple animation
-    waterMaterial.uniforms.time.value = elapsedTime;
-    refractionUniforms.time.value = elapsedTime;
+    if (waterMaterial.uniforms.time.value !== elapsedTime) {
+      waterMaterial.uniforms.time.value = elapsedTime;
+      refractionUniforms.time.value = elapsedTime;
+    }
 
     orbitControls.update();
     renderer.render(scene, camera);
