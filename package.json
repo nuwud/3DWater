@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "dat.gui": "^0.7.9",
+    "gsap": "^3.12.7",
+    "three": "^0.175.0"
+  }
+}
